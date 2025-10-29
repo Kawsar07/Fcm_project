@@ -1,4 +1,3 @@
-# notifications/apps.py
 from django.apps import AppConfig
 from decouple import config
 import firebase_admin
@@ -6,10 +5,8 @@ from firebase_admin import credentials
 from pathlib import Path
 from dotenv import load_dotenv
 
-# CORRECT BASE_DIR: folder containing manage.py
-BASE_DIR = Path(__file__).resolve().parent.parent  # → /Users/.../fcm_project
+BASE_DIR = Path(__file__).resolve().parent.parent  
 
-# Load .env from project root
 load_dotenv(BASE_DIR / ".env")
 
 class NotificationsConfig(AppConfig):

@@ -1,4 +1,3 @@
-# notifications/views.py
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
@@ -10,26 +9,39 @@ from .models import FCMToken
 from .serializers import FCMTokenSerializer
 
 
-# -------------------------------------------------
-# 1. Save FCM token (called from Flutter)
-# -------------------------------------------------
 class SaveFCMTokenView(APIView):
     permission_classes = [IsAuthenticated]
 
     def post(self, request):
-        serializer = FCMTokenSerializer(data=request.data)
-        if serializer.is_valid():
-            fcm_token = serializer.save(user=request.user)
+        token = request.data.get("token")
+        device_id = request.data.get("device_id", "default")
+
+        if not token:
+            return Response({"error": "Token is required"}, status=400)
+
+        existing = FCMToken.objects.filter(
+            user=request.user,
+            device_id=device_id
+        ).first()
+
+        if existing:
+            existing.token = token
+            existing.save()
             return Response(
-                {"message": "Token saved", "token_id": fcm_token.id},
-                status=status.HTTP_201_CREATED,
+                {"message": "Token updated", "token_id": existing.id},
+                status=200
             )
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        else:
+            serializer = FCMTokenSerializer(data=request.data)
+            if serializer.is_valid():
+                fcm_token = serializer.save(user=request.user)
+                return Response(
+                    {"message": "Token saved", "token_id": fcm_token.id},
+                    status=201
+                )
+            return Response(serializer.errors, status=400)
 
 
-# -------------------------------------------------
-# 2. Send push notification (admin only) - UPDATED FOR NEW API
-# -------------------------------------------------
 @api_view(['POST'])
 @permission_classes([IsAdminUser])
 def send_push_notification(request):
@@ -47,14 +59,12 @@ def send_push_notification(request):
     body = request.data.get("body", "")
     extra_data = request.data.get("data", {})
 
-    # Get token(s) for the user
     queryset = FCMToken.objects.filter(user_id=user_id)
     if not queryset.exists():
         return Response({"error": "No FCM token for this user"}, status=404)
 
     tokens = list(queryset.values_list("token", flat=True))
 
-    # Build the message
     message = messaging.MulticastMessage(
         notification=messaging.Notification(title=title, body=body),
         data={str(k): str(v) for k, v in extra_data.items()},  # data must be str→str
@@ -62,7 +72,6 @@ def send_push_notification(request):
     )
 
     try:
-        # NEW: Use send_each_for_multicast() instead of send_multicast()
         batch_response = messaging.send_each_for_multicast(message)
         return Response(
             {
